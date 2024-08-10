@@ -167,3 +167,4 @@ pnnx*
 
 # dataset cache 
 *.cache
+/runs/
