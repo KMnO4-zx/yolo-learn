@@ -46,7 +46,8 @@ __all__ = (
     "Attention",
     "PSA",
     "SCDown",
-    "C2f_Attention_SE"
+    "C2f_Attention_SE",
+    "C2f_Attention_CoT",
 )
 
 
@@ -963,8 +964,11 @@ class SCDown(nn.Module):
 ############################### Improve the performance of the model ########################################
 import numpy as np
 import torch
-from torch import nn
+from torch import flatten, nn
 from torch.nn import init
+from torch.nn.modules.activation import ReLU
+from torch.nn.modules.batchnorm import BatchNorm2d
+from torch.nn import functional as F
 
 class SEAttention(nn.Module):
 
@@ -1000,6 +1004,54 @@ class SEAttention(nn.Module):
         return x * y.expand_as(x)
 
 
+class CoTAttention(nn.Module):
+    def __init__(self, dim=512, kernel_size=3):
+        super().__init__()
+        self.dim = dim
+        self.kernel_size = kernel_size
+
+        # 键嵌入：通过卷积层提取键特征
+        self.key_embed = nn.Sequential(
+            nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=kernel_size // 2, groups=4, bias=False),
+            nn.BatchNorm2d(dim),
+            nn.ReLU()
+        )
+
+        # 值嵌入：通过1x1卷积层压缩通道，提取值特征
+        self.value_embed = nn.Sequential(
+            nn.Conv2d(dim, dim, 1, bias=False),
+            nn.BatchNorm2d(dim)
+        )
+
+        # 注意力嵌入：通过卷积和激活函数生成注意力图
+        factor = 4
+        self.attention_embed = nn.Sequential(
+            nn.Conv2d(2 * dim, 2 * dim // factor, 1, bias=False),
+            nn.BatchNorm2d(2 * dim // factor),
+            nn.ReLU(),
+            nn.Conv2d(2 * dim // factor, kernel_size * kernel_size * dim, 1)
+        )
+
+    def forward(self, x):
+        bs, c, h, w = x.shape  # 获取输入的形状信息：批次大小、通道数、高度、宽度
+        # 键嵌入：提取键特征
+        k1 = self.key_embed(x)  # 形状 (bs, c, h, w)
+        # 值嵌入：提取值特征，并将其变形
+        v = self.value_embed(x).view(bs, c, -1)  # 形状 (bs, c, h*w)
+        # 拼接键特征和输入，作为注意力计算的输入
+        y = torch.cat([k1, x], dim=1)  # 形状 (bs, 2c, h, w)
+        # 计算注意力图
+        att = self.attention_embed(y)  # 形状 (bs, c*k*k, h, w)
+        att = att.reshape(bs, c, self.kernel_size * self.kernel_size, h, w)
+        # 平均池化将注意力图的每个位置进行平均，减少维度
+        att = att.mean(2, keepdim=False).view(bs, c, -1)  # 形状 (bs, c, h*w)
+        # 计算加权值特征
+        k2 = F.softmax(att, dim=-1) * v
+        k2 = k2.view(bs, c, h, w)  # 形状 (bs, c, h, w)
+        # 将键特征和加权后的值特征相加并返回
+        return k1 + k2
+
+
 class C2f_Attention_SE(nn.Module):
     """Faster Implementation of CSP Bottleneck with 2 convolutions."""
 
@@ -1019,6 +1071,33 @@ class C2f_Attention_SE(nn.Module):
         y = list(self.cv1(x).chunk(2, 1))
         y.extend(m(y[-1]) for m in self.m)
         return self.attn(self.cv2(torch.cat(y, 1)))
+
+    def forward_split(self, x):
+        """Forward pass using split() instead of chunk()."""
+        y = list(self.cv1(x).split((self.c, self.c), 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.attn(self.cv2(torch.cat(y, 1)))
+    
+
+class C2f_Attention_CoT(nn.Module):
+    """Faster Implementation of CSP Bottleneck with 2 convolutions."""
+
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        """Initialize CSP bottleneck layer with two convolutions with arguments ch_in, ch_out, number, shortcut, groups,
+        expansion.
+        """
+        super().__init__()
+        self.c = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
+        self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
+        self.attn = CoTAttention(c2)
+
+    def forward(self, x):
+        """Forward pass through C2f layer."""
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
 
     def forward_split(self, x):
         """Forward pass using split() instead of chunk()."""

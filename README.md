@@ -23,3 +23,25 @@ time: 2024-08-09
   - 添加新模型的注册 `__all__ = ['模型名', ...]`
 - `blocks.py`
   - 添加新模块的注册 `__all__ = ['模型名', ...]`
+
+## Attention Modules
+
+### SE-Attention
+
+*cite：[Squeeze-and-Excitation Networks](https://arxiv.org/abs/1709.01507)*
+
+![alt text](./images/SE-Attention.png)
+
+> *block.py: 1055 lines*
+
+
+### Cot-Attention
+
+*cite：[Contextual Transformer Networks for Visual Recognition](https://arxiv.org/abs/2107.12292)*
+
+![alt text](./images/Cot-Attention.png)
+
+> *block.py: 1082 lines*
+
+
+

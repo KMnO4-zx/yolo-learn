@@ -54,6 +54,7 @@ from .block import (
     ResNetLayer,
     SCDown,
     C2f_Attention_SE,
+    C2f_Attention_CoT,
 )
 from .conv import (
     CBAM,
@@ -152,4 +153,5 @@ __all__ = (
     "PSA",
     "SCDown",
     "C2f_Attention_SE",
+    "C2f_Attention_CoT",
 )
