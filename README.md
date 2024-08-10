@@ -1,6 +1,6 @@
-# yolo-learn
+# YOLO-Learn
 
-## Base environment
+## Base Environment
 
 ```
 python: 3.10
@@ -12,16 +12,20 @@ ultralytics repository: 8.2.75
 time: 2024-08-09
 ```
 
-## Six steps add new module
+```bash
+pip install timm thop efficientnet_pytorch einops grad-cam dill albumentations pytorch_wavelets tidecv PyWavelets
+```
 
-- `task.py`
+## Six Steps Add New Module
+
+- `ultralytics/nn/tasks.py`
   - 最前面的 `import`
   - `912` 行的 `parse_model()` 函数中添加新模型的解析
   - `955` 行的 `C2` 模块
-- `__init__.py`
+- `ultralytics/nn/modules/__init__.py`
   - 添加新模型的 `import`
   - 添加新模型的注册 `__all__ = ['模型名', ...]`
-- `blocks.py`
+- `ultralytics/nn/modules/blocks.py`
   - 添加新模块的注册 `__all__ = ['模型名', ...]`
 
 ## Attention Modules
